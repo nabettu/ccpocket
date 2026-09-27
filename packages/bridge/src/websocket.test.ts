@@ -17,6 +17,7 @@ import { UploadStore } from "./upload-store.js";
 
 const {
   getSessionHistoryMock,
+  getClaudeSessionResumeCwdMock,
   getCodexSessionHistoryMock,
   codexThreadToSessionHistoryMock,
   extractMessageImagesMock,
@@ -30,6 +31,7 @@ const {
   revealInFinderMock,
 } = vi.hoisted(() => ({
   getSessionHistoryMock: vi.fn(),
+  getClaudeSessionResumeCwdMock: vi.fn(),
   getCodexSessionHistoryMock: vi.fn(),
   codexThreadToSessionHistoryMock: vi.fn(),
   extractMessageImagesMock: vi.fn(),
@@ -51,6 +53,7 @@ vi.mock("./finder-reveal.js", () => ({
 
 vi.mock("./sessions-index.js", () => ({
   getSessionHistory: getSessionHistoryMock,
+  getClaudeSessionResumeCwd: getClaudeSessionResumeCwdMock,
   getCodexSessionHistory: getCodexSessionHistoryMock,
   codexThreadToSessionHistory: codexThreadToSessionHistoryMock,
   extractMessageImages: extractMessageImagesMock,
@@ -487,6 +490,7 @@ describe("BridgeWebSocketServer resume/get_history flow", () => {
     originalFetch = globalThis.fetch;
     httpServer = createServer();
     getSessionHistoryMock.mockReset();
+    getClaudeSessionResumeCwdMock.mockReset().mockResolvedValue(null);
     getCodexSessionHistoryMock.mockReset();
     codexThreadToSessionHistoryMock.mockReset();
     extractMessageImagesMock.mockReset();
@@ -2572,6 +2576,39 @@ describe("BridgeWebSocketServer resume/get_history flow", () => {
       rootPaths: ["/tmp/project-a", "/tmp/shared"],
     });
 
+    bridge.close();
+  });
+
+  it("resumes Claude from the transcript storage cwd after EnterWorktree", async () => {
+    getSessionHistoryMock.mockResolvedValue([]);
+    const cwd = "/tmp/project-a/.claude/worktrees/feature";
+    getClaudeSessionResumeCwdMock.mockResolvedValue(cwd);
+    const bridge = new BridgeWebSocketServer({ server: httpServer });
+    const create = vi.spyOn((bridge as any).sessionManager, "create");
+    const ws = { readyState: OPEN_STATE, send: vi.fn() } as any;
+    await (bridge as any).handleClientMessage({
+      type: "resume_session", sessionId: "moved-session",
+      projectPath: "/tmp/project-a", provider: "claude",
+    }, ws);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(getClaudeSessionResumeCwdMock).toHaveBeenCalledWith("moved-session");
+    await vi.waitFor(() => expect(create.mock.calls[0]?.[0]).toBe(cwd));
+    bridge.close();
+  });
+
+  it("rejects a resolved Claude cwd outside allowed directories", async () => {
+    getClaudeSessionResumeCwdMock.mockResolvedValue("/outside/worktree");
+    const bridge = new BridgeWebSocketServer({ server: httpServer, allowedDirs: ["/tmp"] });
+    const create = vi.spyOn((bridge as any).sessionManager, "create");
+    const ws = { readyState: OPEN_STATE, send: vi.fn() } as any;
+    await (bridge as any).handleClientMessage({
+      type: "resume_session", sessionId: "moved-session",
+      projectPath: "/tmp/project-a", provider: "claude",
+    }, ws);
+    await vi.waitFor(() => expect(ws.send.mock.calls.map((c: any[]) => JSON.parse(c[0])))
+      .toEqual(expect.arrayContaining([expect.objectContaining({ type: "error" })])));
+    expect(create).not.toHaveBeenCalled();
     bridge.close();
   });
 
@@ -6585,6 +6622,11 @@ describe("BridgeWebSocketServer resume/get_history flow", () => {
 
     expect(createSpy.mock.calls[0]?.[1]?.permissionMode).toBe("auto");
     expect(createSpy.mock.calls[1]?.[1]?.permissionMode).toBe("default");
+
+    await vi.waitFor(() => expect(ws.send.mock.calls.some((c: unknown[]) => {
+      const message = JSON.parse(c[0] as string);
+      return message.type === "system" && message.subtype === "session_created";
+    })).toBe(true));
 
     const sends = ws.send.mock.calls.map((c: unknown[]) => JSON.parse(c[0] as string));
     const created = sends.find((m: any) => m.type === "system" && m.subtype === "session_created");

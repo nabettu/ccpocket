@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
   pathToSlug,
+  readClaudeSessionResumeCwd,
   isWorktreeSlug,
   normalizeWorktreePath,
   scanJsonlDir,
@@ -2522,5 +2523,31 @@ describe("claude namedOnly optimization", () => {
     expect(result.sessions).toHaveLength(1);
     expect(result.sessions[0].sessionId).toBe(sessionId);
     expect(result.sessions[0].name).toBe("SDK title");
+  });
+});
+
+
+describe("readClaudeSessionResumeCwd", () => {
+  let root: string;
+  beforeEach(() => { root = mkdtempSync(join(tmpdir(), "claude-resume-")); });
+  afterEach(() => { rmSync(root, { recursive: true, force: true }); });
+
+  it("uses the storage-matching cwd rather than the initial or latest cwd", async () => {
+    const cwd = "/tmp/repo/.claude/worktrees/feature";
+    const dir = join(root, pathToSlug(cwd));
+    mkdirSync(dir);
+    const file = join(dir, "session.jsonl");
+    writeFileSync(file, ["invalid", JSON.stringify({ cwd: "/tmp/repo" }),
+      JSON.stringify({ cwd }), JSON.stringify({ cwd: "/tmp/another-worktree" })].join("\n"));
+    expect(await readClaudeSessionResumeCwd(file)).toBe(cwd);
+  });
+
+  it("does not invent a cwd when none matches the storage directory", async () => {
+    const dir = join(root, "-unknown");
+    mkdirSync(dir);
+    const file = join(dir, "session.jsonl");
+    writeFileSync(file, JSON.stringify({ cwd: "/tmp/other" }));
+    expect(await readClaudeSessionResumeCwd(file)).toBeNull();
+    expect(await readClaudeSessionResumeCwd(join(dir, "missing.jsonl"))).toBeNull();
   });
 });

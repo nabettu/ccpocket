@@ -1,7 +1,7 @@
 import { readdir, readFile, writeFile, appendFile, stat, open } from "node:fs/promises";
 import { createReadStream, type Dirent } from "node:fs";
 import { createInterface } from "node:readline";
-import { basename, extname, join } from "node:path";
+import { basename, dirname, extname, join } from "node:path";
 import { homedir } from "node:os";
 import { renameSession as renameClaudeSdkSession } from "@anthropic-ai/claude-agent-sdk";
 import { isAutoRenamePromptText } from "./auto-rename.js";
@@ -2714,6 +2714,36 @@ async function findSessionJsonlPath(sessionId: string): Promise<string | null> {
   }
 
   return null;
+}
+
+/** Resolve the cwd whose Claude storage directory actually owns the transcript.
+ * EnterWorktree can move a transcript while retaining earlier messages' cwd.
+ * Do not guess by reversing the lossy directory slug or using the last cwd.
+ */
+export async function readClaudeSessionResumeCwd(filePath: string): Promise<string | null> {
+  const slug = basename(dirname(filePath));
+  const stream = createReadStream(filePath, { encoding: "utf-8" });
+  const lines = createInterface({ input: stream, crlfDelay: Infinity });
+  try {
+    for await (const line of lines) {
+      let entry: { cwd?: unknown };
+      try { entry = JSON.parse(line); } catch { continue; }
+      if (typeof entry?.cwd === "string" && pathToSlug(entry.cwd) === slug) {
+        return entry.cwd;
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  } finally {
+    lines.close();
+    stream.destroy();
+  }
+}
+
+export async function getClaudeSessionResumeCwd(sessionId: string): Promise<string | null> {
+  const filePath = await findSessionJsonlPath(sessionId);
+  return filePath ? readClaudeSessionResumeCwd(filePath) : null;
 }
 
 async function findCodexSessionJsonlPath(threadId: string): Promise<string | null> {

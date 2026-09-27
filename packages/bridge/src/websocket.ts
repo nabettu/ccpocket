@@ -54,6 +54,7 @@ import {
   getAllRecentSessions,
   getCodexSessionHistory,
   getSessionHistory,
+  getClaudeSessionResumeCwd,
   codexUserTurnUuid,
   codexThreadToSessionHistory,
   type SessionHistoryMessage,
@@ -5346,7 +5347,7 @@ export class BridgeWebSocketServer {
         );
         // A stored assignment supplies the root snapshot and secondary roots,
         // while the recent-session path may be a worktree cwd that must win.
-        const resumeProjectPath = resolvePlatformPath(
+        let resumeProjectPath = resolvePlatformPath(
           storedAssignment
             ? msg.projectPath
             : (resumeRoots?.[0] ?? msg.projectPath),
@@ -5764,8 +5765,18 @@ export class BridgeWebSocketServer {
         let historyLoadMs = 0;
         let historyLoaded = false;
         let sessionCreateMs = 0;
-        getSessionHistory(claudeSessionId)
-          .then((pastMessages) => {
+        Promise.all([
+          getSessionHistory(claudeSessionId),
+          getClaudeSessionResumeCwd(claudeSessionId),
+        ])
+          .then(([pastMessages, storedCwd]) => {
+            if (storedCwd) {
+              const resolvedCwd = resolvePlatformPath(storedCwd, this.platform);
+              if (!this.isPathAllowed(resolvedCwd)) {
+                throw new Error(`Session cwd is outside allowed directories: ${resolvedCwd}`);
+              }
+              resumeProjectPath = resolvedCwd;
+            }
             historyLoadMs = Date.now() - historyStartedAt;
             historyLoaded = true;
             historyMetrics = summarizeResumeHistory(pastMessages);
