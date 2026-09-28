@@ -12,6 +12,7 @@ import 'package:ccpocket/services/in_app_review_service.dart';
 import 'package:ccpocket/services/revenuecat_service.dart';
 import 'package:ccpocket/services/support_banner_service.dart';
 import 'package:ccpocket/theme/app_theme.dart';
+import 'package:ccpocket/widgets/session_card.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -121,6 +122,9 @@ Widget _buildHomeContent({
   VoidCallback? onDismissMacOSNativeAppBanner,
   ValueChanged<String?>? onSelectProject,
   ValueChanged<String>? onLoadMoreProject,
+  ValueChanged<RecentSession>? onResumeSession,
+  ValueChanged<String>? onTapRunning,
+  bool compactSessionRows = false,
   required SessionListCubit cubit,
   required DraftService draftService,
   required RevenueCatService revenueCatService,
@@ -169,9 +173,9 @@ Widget _buildHomeContent({
               sandboxMode,
               approvalPolicy,
               approvalsReviewer,
-            }) {},
+            }) => onTapRunning?.call(id),
             onStopSession: (_) {},
-            onResumeSession: (_) {},
+            onResumeSession: onResumeSession ?? (_) {},
             onLongPressRecentSession: (_, _) {},
             onArchiveSession: (_) {},
             onLongPressRunningSession: (_, _) {},
@@ -186,6 +190,7 @@ Widget _buildHomeContent({
             codexUsageOverride: codexUsageOverride,
             onOpenUsageSettings: onOpenUsageSettings,
             onDismissMacOSNativeAppBanner: onDismissMacOSNativeAppBanner,
+            compactSessionRows: compactSessionRows,
           ),
         ),
       ),
@@ -223,6 +228,126 @@ void main() {
     cubit.close();
     mockBridge.dispose();
     await revenueCatService.dispose();
+  });
+
+  group('compact session rows', () {
+    testWidgets('renders one row per recent session and resumes on tap', (
+      tester,
+    ) async {
+      RecentSession? resumed;
+      await tester.pumpWidget(
+        _buildHomeContent(
+          recentSessions: [
+            _session(id: 's1'),
+            _session(id: 's2'),
+          ],
+          compactSessionRows: true,
+          onResumeSession: (session) => resumed = session,
+          cubit: cubit,
+          draftService: draftService,
+          revenueCatService: revenueCatService,
+          supportBannerService: supportBannerService,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(RecentSessionCard), findsNothing);
+      final row = find.byKey(const ValueKey('compact_recent_session_s1'));
+      expect(row, findsOneWidget);
+      expect(
+        find.descendant(of: row, matching: find.text('test prompt for s1')),
+        findsOneWidget,
+      );
+      expect(tester.getSize(row).height, lessThanOrEqualTo(40));
+
+      await tester.tap(row);
+      expect(resumed?.sessionId, 's1');
+    });
+
+    testWidgets('prefers the session name as the row title', (tester) async {
+      final named = RecentSession(
+        sessionId: 'named',
+        name: 'Server speedup',
+        firstPrompt: 'long first prompt',
+        created: '2025-01-01T00:00:00Z',
+        modified: '2025-01-01T00:00:00Z',
+        gitBranch: 'main',
+        projectPath: '/home/user/project-a',
+        isSidechain: false,
+      );
+      await tester.pumpWidget(
+        _buildHomeContent(
+          recentSessions: [named],
+          compactSessionRows: true,
+          cubit: cubit,
+          draftService: draftService,
+          revenueCatService: revenueCatService,
+          supportBannerService: supportBannerService,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final row = find.byKey(const ValueKey('compact_recent_session_named'));
+      expect(
+        find.descendant(of: row, matching: find.text('Server speedup')),
+        findsOneWidget,
+      );
+      expect(find.text('long first prompt'), findsNothing);
+    });
+
+    testWidgets('renders running sessions as rows with their project', (
+      tester,
+    ) async {
+      String? tapped;
+      await tester.pumpWidget(
+        _buildHomeContent(
+          sessions: [_runningSession(id: 'r1')],
+          compactSessionRows: true,
+          onTapRunning: (id) => tapped = id,
+          cubit: cubit,
+          draftService: draftService,
+          revenueCatService: revenueCatService,
+          supportBannerService: supportBannerService,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(RunningSessionCard), findsNothing);
+      final row = find.byKey(const ValueKey('compact_running_session_r1'));
+      expect(row, findsOneWidget);
+      expect(
+        find.descendant(of: row, matching: find.text('Working on something')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: row, matching: find.text('project-a')),
+        findsOneWidget,
+      );
+
+      await tester.tap(row);
+      expect(tapped, 'r1');
+    });
+
+    testWidgets('keeps cards when compact rows are off', (tester) async {
+      await tester.pumpWidget(
+        _buildHomeContent(
+          sessions: [_runningSession(id: 'r1')],
+          recentSessions: [_session(id: 's1')],
+          cubit: cubit,
+          draftService: draftService,
+          revenueCatService: revenueCatService,
+          supportBannerService: supportBannerService,
+        ),
+      );
+      await tester.pump();
+
+      expect(find.byType(RunningSessionCard), findsOneWidget);
+      expect(find.byType(RecentSessionCard), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('compact_recent_session_s1')),
+        findsNothing,
+      );
+    });
   });
 
   group('HomeContent skeleton', () {

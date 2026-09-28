@@ -27,6 +27,7 @@ import 'package:ccpocket/services/revenuecat_service.dart';
 import 'package:ccpocket/services/ssh_startup_service.dart';
 import 'package:ccpocket/services/support_banner_service.dart';
 import 'package:ccpocket/theme/app_theme.dart';
+import 'package:ccpocket/widgets/compact_session_row.dart';
 import 'package:ccpocket/widgets/session_card.dart';
 import 'package:ccpocket/widgets/chat_input_bar.dart';
 import 'package:ccpocket/features/git/git_screen.dart';
@@ -719,7 +720,9 @@ void main() {
       bridge.emitRecentSessions([_recentSession('one')]);
       await _pumpUi(tester);
 
-      final recentSession = find.byKey(const ValueKey('recent_session_one'));
+      final recentSession = find.byKey(
+        const ValueKey('compact_recent_session_one'),
+      );
       await tester.scrollUntilVisible(
         recentSession,
         300,
@@ -2403,7 +2406,9 @@ void main() {
 
       expect(
         tester
-            .widget<RunningSessionCard>(find.byType(RunningSessionCard))
+            .widget<CompactRunningSessionRow>(
+              find.byType(CompactRunningSessionRow),
+            )
             .isSelected,
         isTrue,
       );
@@ -2420,7 +2425,9 @@ void main() {
 
       expect(
         tester
-            .widget<RunningSessionCard>(find.byType(RunningSessionCard))
+            .widget<CompactRunningSessionRow>(
+              find.byType(CompactRunningSessionRow),
+            )
             .isSelected,
         isTrue,
       );
@@ -2479,7 +2486,9 @@ void main() {
 
       expect(
         tester
-            .widget<RunningSessionCard>(find.byType(RunningSessionCard))
+            .widget<CompactRunningSessionRow>(
+              find.byType(CompactRunningSessionRow),
+            )
             .isSelected,
         isTrue,
       );

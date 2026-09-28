@@ -106,14 +106,11 @@ class _RunningSessionCardState extends State<RunningSessionCard> {
     );
     final isReadyUnseen =
         visualStatus.primary == SessionPrimaryStatus.ready && widget.isUnseen;
-    final statusColor = switch (visualStatus.primary) {
-      SessionPrimaryStatus.working => appColors.statusRunning,
-      SessionPrimaryStatus.needsYou => appColors.statusApproval,
-      SessionPrimaryStatus.ready =>
-        isReadyUnseen
-            ? Theme.of(context).colorScheme.onSurface
-            : appColors.statusIdle,
-    };
+    final statusColor = sessionStatusColor(
+      context,
+      visualStatus.primary,
+      isUnseen: widget.isUnseen,
+    );
 
     final permission = session.pendingPermission;
     final hasPermission = permission != null;
@@ -228,7 +225,7 @@ class _RunningSessionCardState extends State<RunningSessionCard> {
                   ],
                   if (widget.onStop != null) ...[
                     const SizedBox(width: 6),
-                    _RunningSessionStopButton(onPressed: widget.onStop!),
+                    RunningSessionStopButton(onPressed: widget.onStop!),
                   ],
                 ],
               ),
@@ -594,10 +591,10 @@ class _QueuedInputBadge extends StatelessWidget {
   }
 }
 
-class _RunningSessionStopButton extends StatelessWidget {
+class RunningSessionStopButton extends StatelessWidget {
   final VoidCallback onPressed;
 
-  const _RunningSessionStopButton({required this.onPressed});
+  const RunningSessionStopButton({required this.onPressed});
 
   @override
   Widget build(BuildContext context) {
@@ -2532,6 +2529,42 @@ class _StatusDotPainter extends CustomPainter {
       oldDelegate.inPlanMode != inPlanMode;
 }
 
+/// Text shown for a recent session in [mode] (first / last prompt or summary).
+String recentSessionDisplayText(
+  RecentSession session,
+  SessionDisplayMode mode,
+) {
+  final String raw;
+  switch (mode) {
+    case SessionDisplayMode.first:
+      raw = session.firstPrompt.isNotEmpty
+          ? session.firstPrompt
+          : session.displayText;
+    case SessionDisplayMode.last:
+      final text = session.lastPrompt ?? session.firstPrompt;
+      raw = text.isNotEmpty ? text : '(no description)';
+    case SessionDisplayMode.summary:
+      final text = session.summary ?? session.firstPrompt;
+      raw = text.isNotEmpty ? text : '(no description)';
+  }
+  return formatCommandText(raw);
+}
+
+/// Accent color for a session's primary status, shared by cards and rows.
+Color sessionStatusColor(
+  BuildContext context,
+  SessionPrimaryStatus status, {
+  required bool isUnseen,
+}) {
+  final appColors = Theme.of(context).extension<AppColors>()!;
+  return switch (status) {
+    SessionPrimaryStatus.working => appColors.statusRunning,
+    SessionPrimaryStatus.needsYou => appColors.statusApproval,
+    SessionPrimaryStatus.ready =>
+      isUnseen ? Theme.of(context).colorScheme.onSurface : appColors.statusIdle,
+  };
+}
+
 String? _formatAgentLabel(String? nickname, String? role) {
   final trimmedNickname = nickname?.trim();
   final trimmedRole = role?.trim();
@@ -2845,22 +2878,7 @@ class RecentSessionCard extends StatelessWidget {
   static String _displayTextForMode(
     RecentSession session,
     SessionDisplayMode mode,
-  ) {
-    final String raw;
-    switch (mode) {
-      case SessionDisplayMode.first:
-        raw = session.firstPrompt.isNotEmpty
-            ? session.firstPrompt
-            : session.displayText;
-      case SessionDisplayMode.last:
-        final text = session.lastPrompt ?? session.firstPrompt;
-        raw = text.isNotEmpty ? text : '(no description)';
-      case SessionDisplayMode.summary:
-        final text = session.summary ?? session.firstPrompt;
-        raw = text.isNotEmpty ? text : '(no description)';
-    }
-    return formatCommandText(raw);
-  }
+  ) => recentSessionDisplayText(session, mode);
 
   String _formatDateRange(String createdIso, String modifiedIso) {
     if (modifiedIso.isEmpty) return _formatDate(createdIso);

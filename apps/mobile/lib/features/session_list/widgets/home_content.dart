@@ -18,6 +18,7 @@ import '../../../theme/app_theme.dart';
 import '../../../theme/provider_style.dart';
 import '../../../router/app_router.dart';
 import '../../../widgets/pin_toggle_button.dart';
+import '../../../widgets/compact_session_row.dart';
 import '../../../widgets/session_card.dart';
 import '../../../widgets/workspace_pane_chrome.dart';
 import '../state/session_list_cubit.dart';
@@ -156,6 +157,9 @@ class HomeContent extends StatefulWidget {
   final UsageInfo? codexUsageOverride;
   final UsageDisplayMode usageDisplayMode;
 
+  /// Render sessions as single-line rows (multi-pane sidebar) instead of cards.
+  final bool compactSessionRows;
+
   const HomeContent({
     super.key,
     required this.connectionState,
@@ -215,6 +219,7 @@ class HomeContent extends StatefulWidget {
     this.usageBridgeService,
     this.codexUsageOverride,
     this.usageDisplayMode = UsageDisplayMode.remaining,
+    this.compactSessionRows = false,
   });
 
   @override
@@ -473,6 +478,21 @@ class HomeContentState extends State<HomeContent> {
     );
   }
 
+  void _tapRunning(SessionInfo session) => widget.onTapRunning(
+    session.id,
+    projectPath: session.projectPath,
+    workspace: session.workspace,
+    gitBranch: session.worktreePath != null
+        ? session.worktreeBranch
+        : session.gitBranch,
+    worktreePath: session.worktreePath,
+    provider: session.provider,
+    permissionMode: session.permissionMode,
+    sandboxMode: session.codexSandboxMode,
+    approvalPolicy: session.codexApprovalPolicy,
+    approvalsReviewer: session.codexApprovalsReviewer,
+  );
+
   @override
   Widget build(BuildContext context) {
     final shell = WorkspaceShellScreen.maybeOf(context);
@@ -721,11 +741,12 @@ class HomeContentState extends State<HomeContent> {
       );
     }
 
+    final compact = widget.compactSessionRows;
     return ListView(
       key: const ValueKey('session_list'),
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.all(12),
+      padding: EdgeInsets.all(compact ? 8 : 12),
       children: [
         if (isReconnecting) const SessionReconnectBanner(),
         ?connectedBridgeBanner,
@@ -745,33 +766,9 @@ class HomeContentState extends State<HomeContent> {
                   : () => widget.onCancelOfflinePendingAction!(action.id),
             ),
           for (final session in runningSessions)
-            Slidable(
-              key: ValueKey('running_session_${session.id}'),
-              endActionPane: ActionPane(
-                motion: const BehindMotion(),
-                extentRatio: 0.18,
-                children: [
-                  CustomSlidableAction(
-                    onPressed: (_) => widget.onStopSession(session.id),
-                    backgroundColor: Colors.transparent,
-                    padding: EdgeInsets.zero,
-                    child: Container(
-                      width: 48,
-                      height: 48,
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.error,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.stop_circle_outlined,
-                        color: Colors.white,
-                        size: 22,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              child: RunningSessionCard(
+            if (compact)
+              CompactRunningSessionRow(
+                key: ValueKey('compact_running_session_${session.id}'),
                 session: session,
                 projectNameOverride:
                     currentProjectNames[session.workspaceGroupKey],
@@ -779,51 +776,81 @@ class HomeContentState extends State<HomeContent> {
                   final key? => widget.pinnedSessionKeys.contains(key),
                   null => false,
                 },
-                onTogglePinned:
-                    runningSessionPinKey(session) == null ||
-                        widget.onToggleRunningSessionPinned == null
-                    ? null
-                    : () => widget.onToggleRunningSessionPinned!(session),
                 isUnseen: widget.unseenSessionIds.contains(session.id),
                 isSelected:
                     selectedSessionId == session.id &&
                     selectedSessionProvider == session.provider,
-                onLongPress: () =>
-                    widget.onLongPressRunningSession(session, null),
                 onShowActions: (position) =>
                     widget.onLongPressRunningSession(session, position),
                 onStop: showInlineStopButton
                     ? () => widget.onStopSession(session.id)
                     : null,
-                onTap: () => widget.onTapRunning(
-                  session.id,
-                  projectPath: session.projectPath,
-                  workspace: session.workspace,
-                  gitBranch: session.worktreePath != null
-                      ? session.worktreeBranch
-                      : session.gitBranch,
-                  worktreePath: session.worktreePath,
-                  provider: session.provider,
-                  permissionMode: session.permissionMode,
-                  sandboxMode: session.codexSandboxMode,
-                  approvalPolicy: session.codexApprovalPolicy,
-                  approvalsReviewer: session.codexApprovalsReviewer,
+                onTap: () => _tapRunning(session),
+              )
+            else
+              Slidable(
+                key: ValueKey('running_session_${session.id}'),
+                endActionPane: ActionPane(
+                  motion: const BehindMotion(),
+                  extentRatio: 0.18,
+                  children: [
+                    CustomSlidableAction(
+                      onPressed: (_) => widget.onStopSession(session.id),
+                      backgroundColor: Colors.transparent,
+                      padding: EdgeInsets.zero,
+                      child: Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.error,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.stop_circle_outlined,
+                          color: Colors.white,
+                          size: 22,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                onApprove: (toolUseId, {bool clearContext = false}) => widget
-                    .onApprovePermission
-                    ?.call(session.id, toolUseId, clearContext: clearContext),
-                onApproveAlways: (toolUseId) =>
-                    widget.onApproveAlways?.call(session.id, toolUseId),
-                onReject: (toolUseId, {String? message}) => widget
-                    .onRejectPermission
-                    ?.call(session.id, toolUseId, message: message),
-                onAnswer: (toolUseId, result) => widget.onAnswerQuestion?.call(
-                  session.id,
-                  toolUseId,
-                  result,
+                child: RunningSessionCard(
+                  session: session,
+                  projectNameOverride:
+                      currentProjectNames[session.workspaceGroupKey],
+                  isPinned: switch (runningSessionPinKey(session)) {
+                    final key? => widget.pinnedSessionKeys.contains(key),
+                    null => false,
+                  },
+                  onTogglePinned:
+                      runningSessionPinKey(session) == null ||
+                          widget.onToggleRunningSessionPinned == null
+                      ? null
+                      : () => widget.onToggleRunningSessionPinned!(session),
+                  isUnseen: widget.unseenSessionIds.contains(session.id),
+                  isSelected:
+                      selectedSessionId == session.id &&
+                      selectedSessionProvider == session.provider,
+                  onLongPress: () =>
+                      widget.onLongPressRunningSession(session, null),
+                  onShowActions: (position) =>
+                      widget.onLongPressRunningSession(session, position),
+                  onStop: showInlineStopButton
+                      ? () => widget.onStopSession(session.id)
+                      : null,
+                  onTap: () => _tapRunning(session),
+                  onApprove: (toolUseId, {bool clearContext = false}) => widget
+                      .onApprovePermission
+                      ?.call(session.id, toolUseId, clearContext: clearContext),
+                  onApproveAlways: (toolUseId) =>
+                      widget.onApproveAlways?.call(session.id, toolUseId),
+                  onReject: (toolUseId, {String? message}) => widget
+                      .onRejectPermission
+                      ?.call(session.id, toolUseId, message: message),
+                  onAnswer: (toolUseId, result) => widget.onAnswerQuestion
+                      ?.call(session.id, toolUseId, result),
                 ),
               ),
-            ),
         ],
         const SizedBox(height: 16),
         if (widget.isInitialLoading ||
@@ -931,6 +958,7 @@ class HomeContentState extends State<HomeContent> {
               for (final session in filteredSessions)
                 _RecentSessionSlidable(
                   session: session,
+                  compact: compact,
                   projectNameOverride:
                       currentProjectNames[session.workspaceGroupKey],
                   isPinned: widget.pinnedSessionKeys.contains(
@@ -957,6 +985,7 @@ class HomeContentState extends State<HomeContent> {
               for (final group in groupedRecentSessions)
                 _ProjectRecentSessionGroup(
                   group: group,
+                  compact: compact,
                   displayMode: _displayMode,
                   isCollapsed: widget.collapsedProjectPaths.contains(
                     group.groupKey,
@@ -1105,6 +1134,7 @@ class _LoadMoreRecentSessionsButton extends StatelessWidget {
 
 class _RecentSessionSlidable extends StatelessWidget {
   final RecentSession session;
+  final bool compact;
   final String? projectNameOverride;
   final bool isPinned;
   final SessionDisplayMode displayMode;
@@ -1117,6 +1147,7 @@ class _RecentSessionSlidable extends StatelessWidget {
 
   const _RecentSessionSlidable({
     required this.session,
+    this.compact = false,
     this.projectNameOverride,
     required this.isPinned,
     required this.displayMode,
@@ -1129,6 +1160,19 @@ class _RecentSessionSlidable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (compact) {
+      return CompactRecentSessionRow(
+        key: ValueKey('compact_recent_session_${session.sessionId}'),
+        session: session,
+        displayMode: displayMode,
+        draftText: context.read<DraftService>().getDraft(session.sessionId),
+        isPinned: isPinned,
+        isProcessing: archivingSessionIds.contains(session.sessionId),
+        onTap: () => onResumeSession(session),
+        onShowActions: (position) =>
+            onLongPressRecentSession(session, position),
+      );
+    }
     return Slidable(
       key: ValueKey('recent_session_${session.sessionId}'),
       endActionPane: ActionPane(
@@ -1219,6 +1263,7 @@ class _RecentSessionsEmptyResult extends StatelessWidget {
 
 class _ProjectRecentSessionGroup extends StatelessWidget {
   final _ProjectSessionGroup group;
+  final bool compact;
   final SessionDisplayMode displayMode;
   final bool isCollapsed;
   final bool isLoadingMore;
@@ -1238,6 +1283,7 @@ class _ProjectRecentSessionGroup extends StatelessWidget {
 
   const _ProjectRecentSessionGroup({
     required this.group,
+    this.compact = false,
     required this.displayMode,
     required this.isCollapsed,
     required this.isLoadingMore,
@@ -1267,6 +1313,7 @@ class _ProjectRecentSessionGroup extends StatelessWidget {
         children: [
           _ProjectRecentSessionHeader(
             groupKey: group.groupKey,
+            compact: compact,
             projectName: group.projectName,
             isCollapsed: isCollapsed,
             isPinned: isPinned,
@@ -1274,10 +1321,11 @@ class _ProjectRecentSessionGroup extends StatelessWidget {
             onTogglePinned: onTogglePinned,
           ),
           if (!isCollapsed) ...[
-            const SizedBox(height: 4),
+            SizedBox(height: compact ? 0 : 4),
             for (final session in visibleSessions)
               _RecentSessionSlidable(
                 session: session,
+                compact: compact,
                 projectNameOverride: group.projectName,
                 isPinned: pinnedSessionKeys.contains(
                   recentSessionPinKey(session),
@@ -1306,7 +1354,11 @@ class _ProjectRecentSessionGroup extends StatelessWidget {
               Align(
                 alignment: Alignment.centerLeft,
                 child: Padding(
-                  padding: const EdgeInsets.only(left: 28, top: 2, bottom: 4),
+                  padding: EdgeInsets.only(
+                    left: compact ? 24 : 28,
+                    top: 2,
+                    bottom: 4,
+                  ),
                   child: InkWell(
                     key: ValueKey('project_show_more_${group.groupKey}'),
                     borderRadius: BorderRadius.circular(6),
@@ -1345,6 +1397,7 @@ class _ProjectRecentSessionGroup extends StatelessWidget {
 
 class _ProjectRecentSessionHeader extends StatelessWidget {
   final String groupKey;
+  final bool compact;
   final String projectName;
   final bool isCollapsed;
   final bool isPinned;
@@ -1353,6 +1406,7 @@ class _ProjectRecentSessionHeader extends StatelessWidget {
 
   const _ProjectRecentSessionHeader({
     required this.groupKey,
+    this.compact = false,
     required this.projectName,
     required this.isCollapsed,
     required this.isPinned,
@@ -1371,7 +1425,10 @@ class _ProjectRecentSessionHeader extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+          padding: EdgeInsets.symmetric(
+            horizontal: 4,
+            vertical: compact ? 2 : 6,
+          ),
           child: Row(
             children: [
               AnimatedRotation(
@@ -1389,9 +1446,14 @@ class _ProjectRecentSessionHeader extends StatelessWidget {
                   projectName,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
+                  style: compact
+                      ? theme.textTheme.bodySmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: colorScheme.onSurfaceVariant,
+                        )
+                      : theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
                 ),
               ),
               PinToggleButton(

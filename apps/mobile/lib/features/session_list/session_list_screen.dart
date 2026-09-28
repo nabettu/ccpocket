@@ -2099,6 +2099,7 @@ class _SessionListScreenState extends State<SessionListScreen>
               connectedBridgeLabel: connectedBridgeLabel,
               usageBridgeService: bridge,
               usageDisplayMode: settingsState.usageDisplayMode,
+              compactSessionRows: widget.embedded,
             ),
           );
         },
